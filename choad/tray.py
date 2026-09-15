@@ -9,7 +9,7 @@ import pystray  # module-level, not inside run_tray() - see main.py's
 # import failure happens while *importing this module*, not later when
 # run_tray() is actually called.
 
-from .branding import make_badge_image
+from .branding import get_icon_image
 
 
 def run_tray(ctx, on_quit):
@@ -57,5 +57,5 @@ def run_tray(ctx, on_quit):
         pystray.MenuItem(update_label, update_action),
         pystray.MenuItem("Quit", quit_app),
     )
-    icon = pystray.Icon("choad", make_badge_image(), "CHOAD", menu)
+    icon = pystray.Icon("choad", get_icon_image(), "CHOAD", menu)
     icon.run()

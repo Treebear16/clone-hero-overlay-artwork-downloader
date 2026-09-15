@@ -1,6 +1,7 @@
 # PyInstaller spec for CHOAD. Build with:  pyinstaller choad.spec
 # Produces a single-file, no-console executable with the app icon baked in.
 # Must be run on each target OS - PyInstaller does not cross-compile.
+import os
 import sys
 
 from PyInstaller.utils.hooks import collect_submodules
@@ -22,11 +23,18 @@ elif sys.platform == "darwin":
 # Linux .desktop launchers reference assets/icon.png directly; PyInstaller
 # has no embedded-icon concept for plain ELF binaries.
 
+datas = [("choad/templates", "choad/templates")]
+# Bundle the user's custom icon (if they dropped one in) so the *running*
+# tray icon uses it too, not just the file/app icon set at build time -
+# see choad/branding.py's get_icon_image().
+if os.path.isfile("assets/icon_source.png"):
+    datas.append(("assets/icon_source.png", "assets"))
+
 a = Analysis(
     ["run.py"],
     pathex=[],
     binaries=[],
-    datas=[("choad/templates", "choad/templates")],
+    datas=datas,
     hiddenimports=hidden,
     hookspath=[],
     runtime_hooks=[],

@@ -65,6 +65,22 @@ The library index cache lives alongside it (`library-cache.json`).
 
 ## Packaging into a standalone, double-click executable
 
+### Using your own icon instead of the default badge
+
+By default the app icon (tray icon + the built .exe/.app's file icon) is a
+purple "CH"/"OAD" badge drawn in code (`choad/branding.py`). To use your
+own image instead: drop a square PNG at `assets/icon_source.png` (512x512
+or bigger, transparent background is fine — non-square images get
+center-cropped automatically). That's it — no code changes. It's picked
+up automatically by:
+- the live tray icon (bundled into the build so it still shows up when frozen)
+- `scripts/build_icons.py`, which generates `.ico`/`.icns`/`.png` from it
+  instead of the drawn badge
+
+Delete `assets/icon_source.png` to fall back to the generated badge again.
+If you just want a different color on the same badge design, it's a
+one-line change: `ACCENT` near the top of `choad/branding.py`.
+
 End users never need Python or a terminal — they just run the built
 `CHOAD.exe` / `CHOAD.app` / `CHOAD` file, and the tray icon appears.
 

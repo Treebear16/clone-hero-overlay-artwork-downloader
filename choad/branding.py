@@ -1,9 +1,28 @@
 """Draws the 'CH'/'OAD' badge purely in code - mirrors New-BadgeIcon from
 the ps1. Used both for the live tray icon and for pre-baking app icon files
-for the PyInstaller build."""
+for the PyInstaller build.
+
+To use your own image instead of the generated badge, just drop a square
+PNG at assets/icon_source.png (ideally 512x512+, transparent background is
+fine) - get_icon_image() below picks it up automatically, both for the live
+tray icon and for the .ico/.icns files scripts/build_icons.py generates.
+No code changes needed; delete that file to fall back to the generated
+badge again."""
+import os
+import sys
+
 from PIL import Image, ImageDraw, ImageFont
 
-ACCENT = (88, 101, 242)
+ACCENT = (88, 101, 242)  # change this to recolor the generated badge
+
+_CUSTOM_ICON_RELATIVE_PATH = os.path.join("assets", "icon_source.png")
+
+
+def _resource_path(relative_path):
+    """Resolves a path relative to the project root when running from
+    source, or PyInstaller's bundle dir when frozen."""
+    base = getattr(sys, "_MEIPASS", None) or os.path.join(os.path.dirname(__file__), "..")
+    return os.path.join(base, relative_path)
 
 
 def make_badge_image(size=256):
@@ -33,3 +52,25 @@ def make_badge_image(size=256):
         y += h
 
     return img
+
+
+def load_custom_icon(size=256):
+    """Returns the user-supplied assets/icon_source.png, center-cropped to
+    square and resized, or None if that file doesn't exist."""
+    path = _resource_path(_CUSTOM_ICON_RELATIVE_PATH)
+    if not os.path.isfile(path):
+        return None
+    img = Image.open(path).convert("RGBA")
+    w, h = img.size
+    if w != h:
+        crop_size = min(w, h)
+        x = (w - crop_size) // 2
+        y = (h - crop_size) // 2
+        img = img.crop((x, y, x + crop_size, y + crop_size))
+    return img.resize((size, size), Image.LANCZOS)
+
+
+def get_icon_image(size=256):
+    """What everything (tray icon, icon-file generator) should actually
+    call - prefers a user-supplied image, falls back to the drawn badge."""
+    return load_custom_icon(size) or make_badge_image(size)
