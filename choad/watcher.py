@@ -59,8 +59,8 @@ class Watcher:
         if self.running:
             return
         settings = self._settings_getter()
-        if not settings.song_file or not os.path.isfile(settings.song_file):
-            raise ValueError("Song file path is not set or doesn't exist.")
+        if not settings.current_song_file or not os.path.isfile(settings.current_song_file):
+            raise ValueError("Current song file path is not set or doesn't exist.")
         if not settings.output_image:
             raise ValueError("Output image path is not set.")
 
@@ -72,7 +72,7 @@ class Watcher:
         self._thread = threading.Thread(target=self._loop, daemon=True)
         self._thread.start()
         self.running = True
-        self.logger.log(f"Started watching '{settings.song_file}'")
+        self.logger.log(f"Started watching '{settings.current_song_file}'")
 
     def stop(self):
         if not self.running:
@@ -93,17 +93,17 @@ class Watcher:
 
     def _tick(self):
         settings = self._settings_getter()
-        song_file = settings.song_file
-        if not song_file or not os.path.isfile(song_file):
+        current_song_file = settings.current_song_file
+        if not current_song_file or not os.path.isfile(current_song_file):
             return
 
-        mtime = os.stat(song_file).st_mtime_ns
+        mtime = os.stat(current_song_file).st_mtime_ns
         if mtime == self._last_mtime:
             return
         self._last_mtime = mtime
 
         try:
-            info = parse_song_file(song_file)
+            info = parse_song_file(current_song_file)
         except OSError as exc:
             self.logger.log(f"Couldn't read song file: {exc}")
             return

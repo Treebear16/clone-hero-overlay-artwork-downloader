@@ -31,6 +31,22 @@ def run_tray(ctx, on_quit):
     def watch_label(item):
         return "Stop Watching" if ctx.watcher.running else "Start Watching"
 
+    def update_label(item):
+        info = ctx.update_info
+        return f"Update available: {info['version']} (click to open)" if info else "Check for Updates"
+
+    def update_action(icon, item):
+        if ctx.update_info:
+            webbrowser.open(ctx.update_info["release_url"])
+            return
+        from . import updater
+        result = updater.check_latest_release()
+        ctx.update_info = result
+        if result:
+            webbrowser.open(result["release_url"])
+        else:
+            ctx.logger.log("No update available - you're running the latest version.")
+
     def quit_app(icon, item):
         icon.stop()
         on_quit()
@@ -38,6 +54,7 @@ def run_tray(ctx, on_quit):
     menu = pystray.Menu(
         pystray.MenuItem("Open Control Panel", open_panel, default=True),
         pystray.MenuItem(watch_label, toggle_watch),
+        pystray.MenuItem(update_label, update_action),
         pystray.MenuItem("Quit", quit_app),
     )
     icon = pystray.Icon("choad", make_badge_image(), "CHOAD", menu)

@@ -5,6 +5,7 @@ import threading
 from .config import load_settings, save_settings
 from .library import LibraryIndex
 from .state import NowPlaying, Logger
+from .version import APP_VERSION
 from .watcher import Watcher
 from .webapp import create_app
 
@@ -27,6 +28,7 @@ class AppContext:
             library_index=self.library_index,
         )
         self.now_playing.apply_settings(self.settings)
+        self.update_info = None  # set by updater.start_background_check
 
 
 def run_server(ctx, host="127.0.0.1"):
@@ -47,8 +49,12 @@ def main():
 
     server_thread = threading.Thread(target=run_server, args=(ctx, args.host), daemon=True)
     server_thread.start()
+    ctx.logger.log(f"CHOAD v{APP_VERSION}")
     ctx.logger.log(f"Control panel: http://{args.host}:{ctx.settings.overlay_port}/")
     ctx.logger.log(f"Overlay (add as OBS browser source): http://{args.host}:{ctx.settings.overlay_port}/overlay")
+
+    from . import updater
+    updater.start_background_check(ctx)
 
     if args.no_tray:
         try:

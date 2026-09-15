@@ -94,7 +94,7 @@ right icon per platform, so you don't need to pass those flags by hand.
 **Option B — let GitHub build all three for you** (`.github/workflows/build.yml`
 is already set up for this — one-time setup, then it's automatic):
 
-1. Push this project to a GitHub repo.
+1. Push this project to `https://github.com/Treebear16/clone-hero-overlay-artwork-downloader`.
 2. Tag a release and push the tag:
    ```
    git tag v1.0.0
@@ -114,6 +114,8 @@ you can catch a broken build before tagging.
 ```
 choad/
   config.py     - settings load/save, cross-platform config dir
+  version.py    - APP_VERSION, bump this alongside each release tag
+  updater.py    - background GitHub Releases check for a newer version
   state.py      - NowPlaying (shared with the overlay HTTP thread) + Logger
   library.py    - song.ini indexing with incremental cache, local art lookup
   artwork.py    - image crop/resize/flatten, iTunes Search API lookup
@@ -130,6 +132,39 @@ choad.spec      - PyInstaller build config (onefile, no console, per-OS icon)
 scripts/build_icons.py - generates assets/icon.{ico,icns,png}
 .github/workflows/build.yml - CI build for all 3 OSes + auto-release on tag
 ```
+
+## Auto-update checks
+
+Once you've pushed this to a GitHub repo (see Packaging above), CHOAD can
+check that repo's Releases for a newer version automatically — in the
+background, once at startup and then once a day — and surface it as a
+banner in the control panel and a tray menu item, both linking straight to
+the right download for your OS.
+
+Already pointed at `Treebear16/clone-hero-overlay-artwork-downloader` in
+`choad/updater.py` (`GITHUB_REPO`) — nothing to configure. It'll just
+return "no update" (silently) until that repo actually has a Release with
+a tag newer than `APP_VERSION`, which happens automatically the first time
+you push a `vX.Y.Z` tag (see Packaging above).
+
+**Per-release step:** bump `APP_VERSION` in `choad/version.py` before you
+tag each release, so it matches the tag you're about to push (e.g.
+`APP_VERSION = "1.1.0"` before tagging `v1.1.0`) — that's how the updater
+tells "newer" from "same".
+
+This only works for a public repo (or one your users can already reach),
+since it's just hitting the public GitHub Releases API — no server, no
+account needed.
+
+**What this deliberately does NOT do:** silently download and swap out the
+running executable. A PyInstaller onefile binary is locked while it's
+running (Windows won't let you overwrite it in place), and getting a
+self-replace-and-relaunch sequence right on all three OSes without being
+able to test it against the actual built binaries risks bricking someone's
+install for the sake of skipping one click. So it's "automatically checks,
+one click to grab the new version" rather than fully silent — a reasonable
+middle ground, but say the word if you'd rather I build out true in-place
+self-updating (it's doable, just wants real testing on each OS as we go).
 
 ## Notes / things worth knowing
 

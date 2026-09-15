@@ -83,6 +83,7 @@ def create_app(ctx):
                 "libraryCount": len(ctx.library_index),
                 "overlayUrl": f"http://localhost:{ctx.settings.overlay_port}/overlay",
                 "nowPlaying": ctx.now_playing.snapshot(),
+                "updateAvailable": ctx.update_info,
             }
         )
 

@@ -50,13 +50,26 @@
   #browseModal .box{background:var(--panel);border:1px solid var(--border);border-radius:8px;width:560px;max-height:70vh;
                      display:flex;flex-direction:column;padding:16px;}
   #browseModal .path{font-size:12px;color:var(--subtle);margin-bottom:8px;word-break:break-all;}
+  #browseModal .hint-banner{
+    display:none;background:#1e1f24;border:1px solid var(--accent);color:var(--text);
+    font-size:12.5px;padding:8px 10px;border-radius:6px;margin-bottom:10px;
+  }
+  #browseModal .hint-banner.show{display:block;}
   #browseModal .list{flex:1;overflow-y:auto;border:1px solid var(--border);border-radius:6px;}
   #browseModal .entry{padding:7px 10px;cursor:pointer;font-size:13px;}
   #browseModal .entry:hover{background:#1e1f24;}
   #browseModal .footer{display:flex;justify-content:flex-end;gap:8px;margin-top:12px;}
+  #updateBanner{display:none;background:var(--accent);color:#fff;padding:10px 24px;font-size:13px;
+                 align-items:center;justify-content:space-between;gap:12px;}
+  #updateBanner.show{display:flex;}
+  #updateBanner a{color:#fff;font-weight:600;text-decoration:underline;}
 </style>
 </head>
 <body>
+<div id="updateBanner">
+  <span id="updateBannerText"></span>
+  <a id="updateBannerLink" href="#" target="_blank">Download</a>
+</div>
 <header>
   <h1>CHOAD</h1>
   <span class="ver">Clone Hero Overlay Artwork Downloader</span>
@@ -80,10 +93,11 @@
 
   <section>
     <h2>Paths</h2>
-    <div class="row"><label>Song File</label>
-      <input type="text" id="song_file" placeholder="...\\Clone Hero\\songs.txt">
-      <button class="browse-btn" data-target="song_file" data-mode="file">Browse</button>
+    <div class="row"><label>Current Song File</label>
+      <input type="text" id="current_song_file" placeholder="...\\Clone Hero\\currentsong.txt">
+      <button class="browse-btn" data-target="current_song_file" data-mode="file" data-hint="Looking for: currentsong.txt (written by Clone Hero while a song is playing)">Browse</button>
     </div>
+    <div class="hint">Clone Hero writes this file itself - you're pointing at its <code>currentsong.txt</code>, usually inside your Clone Hero install folder.</div>
     <div class="row"><label>Output Image (for OBS)</label>
       <input type="text" id="output_image" placeholder="...\\overlay-art.jpg">
       <button class="browse-btn" data-target="output_image" data-mode="file">Browse</button>
@@ -173,6 +187,7 @@
 
 <div id="browseModal">
   <div class="box">
+    <div class="hint-banner" id="browseHint"></div>
     <div class="path" id="browsePath"></div>
     <div class="list" id="browseList"></div>
     <div class="footer">
@@ -184,7 +199,7 @@
 
 <script>
 const FIELDS = [
-  "song_file","output_image","default_image","songs_library_folder","target_size","itunes_lookup_enabled",
+  "current_song_file","output_image","default_image","songs_library_folder","target_size","itunes_lookup_enabled",
   "overlay_port","overlay_text_color","overlay_bg_color","overlay_panel_width","overlay_idle_text",
   "overlay_idle_font_size","overlay_custom_font_path","overlay_layout","overlay_bg_opacity",
   "overlay_song_font_size","overlay_artist_font_size","overlay_charter_font_size","overlay_scroll_speed",
@@ -255,6 +270,16 @@ async function refreshStatus(){
   el("startBtn").classList.toggle("btn-accent", !watching);
   el("overlayLink").textContent = s.overlayUrl;
   el("overlayLink").href = s.overlayUrl;
+
+  const banner = el("updateBanner");
+  if (s.updateAvailable){
+    banner.classList.add("show");
+    el("updateBannerText").textContent = `A new version (${s.updateAvailable.version}) is available.`;
+    const link = el("updateBannerLink");
+    link.href = s.updateAvailable.download_url || s.updateAvailable.release_url;
+  } else {
+    banner.classList.remove("show");
+  }
 }
 
 async function pollLog(){
@@ -301,12 +326,17 @@ let browseTarget = null;
 let browseMode = "dir";
 let browseAppend = false;
 let browseCurrentPath = null;
+let browseHint = "";
 
 document.querySelectorAll(".browse-btn").forEach(btn => {
   btn.addEventListener("click", () => {
     browseTarget = btn.dataset.target;
     browseMode = btn.dataset.mode;
     browseAppend = btn.dataset.append === "true";
+    browseHint = btn.dataset.hint || "";
+    const hintEl = el("browseHint");
+    hintEl.textContent = browseHint;
+    hintEl.classList.toggle("show", !!browseHint);
     openBrowser(null);
   });
 });

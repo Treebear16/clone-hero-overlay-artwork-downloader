@@ -29,9 +29,9 @@ LIBRARY_CACHE_FILE = lambda: get_config_dir() / "library-cache.json"
 
 @dataclass
 class Settings:
-    song_file: str = ""
-    output_image: str = ""
-    default_image: str = ""
+    current_song_file: str = ""  # the currentsong.txt Clone Hero itself writes while a song is playing
+    output_image: str = ""  # the art file this app writes, for OBS's Image Source to point at
+    default_image: str = ""  # shown when nothing is playing / no art was found
     songs_library_folder: str = ""  # ';'-separated multiple roots
     target_size: int = 500
     itunes_lookup_enabled: bool = True
