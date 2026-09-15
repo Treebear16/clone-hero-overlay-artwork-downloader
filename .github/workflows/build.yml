@@ -1,0 +1,93 @@
+name: Build CHOAD
+
+# Runs the build on every push (so you can sanity-check it), and publishes
+# a GitHub Release with all three executables attached whenever you push a
+# tag like "v1.0.0" - that's the one command you'd run:
+#
+#   git tag v1.0.0 && git push origin v1.0.0
+#
+# From then on, users just download the file for their OS from the
+# Releases page and double-click it - no terminal, no Python install.
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  workflow_dispatch: {}
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - os: windows-latest
+            artifact: CHOAD-windows.zip
+            build_path: dist/CHOAD.exe
+          - os: macos-latest
+            artifact: CHOAD-macos.zip
+            build_path: dist/CHOAD.app
+          - os: ubuntu-latest
+            artifact: CHOAD-linux.zip
+            build_path: dist/CHOAD
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pyinstaller
+
+      # Linux runners have no desktop/tray by default, but pystray still
+      # needs an importable backend (AppIndicator/GTK) to *build* cleanly.
+      - name: Install Linux tray dependencies
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gir1.2-appindicator3-0.1 gir1.2-gtk-3.0 python3-gi
+
+      - name: Build icons
+        run: python scripts/build_icons.py
+
+      - name: Build executable
+        run: pyinstaller --noconfirm choad.spec
+
+      - name: Zip artifact (Windows)
+        if: matrix.os == 'windows-latest'
+        run: Compress-Archive -Path dist/CHOAD.exe -DestinationPath ${{ matrix.artifact }}
+        shell: pwsh
+
+      - name: Zip artifact (macOS)
+        if: matrix.os == 'macos-latest'
+        run: ditto -c -k --sequesterRsrc --keepParent dist/CHOAD.app ${{ matrix.artifact }}
+
+      - name: Zip artifact (Linux)
+        if: matrix.os == 'ubuntu-latest'
+        run: (cd dist && zip -r ../${{ matrix.artifact }} CHOAD)
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: ${{ matrix.artifact }}
+
+  release:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+      - name: Flatten artifact folders
+        run: |
+          mkdir -p release
+          find artifacts -maxdepth 2 -type f -name "*.zip" -exec cp {} release/ \;
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: release/*.zip
+          generate_release_notes: true
