@@ -184,6 +184,15 @@ self-updating (it's doable, just wants real testing on each OS as we go).
 
 ## Notes / things worth knowing
 
+- The control panel's "Browse" buttons open your OS's actual native file/
+  folder picker (Explorer on Windows, Finder-style panel on macOS, your
+  desktop's native dialog on Linux) rather than a custom in-page browser —
+  it runs in a short-lived subprocess of the app itself and hands the
+  chosen path back to the field you clicked from. If your Linux desktop
+  doesn't have Tk installed (`python3-tk`), or you're running fully
+  headless, the picker just quietly does nothing and you can type the path
+  directly instead — nothing else breaks.
+
 - Only `album.png`/`album.jpg`/`album.jpeg` are recognized as local art,
   same as the original.
 - The library scan/cache never writes into your song folders — read-only,

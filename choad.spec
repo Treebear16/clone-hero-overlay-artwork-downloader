@@ -12,8 +12,12 @@ block_cipher = None
 # based on sys.platform, which PyInstaller's static analysis doesn't
 # always resolve as a hidden import on its own - pull in every pystray
 # submodule explicitly so the right backend is always bundled regardless
-# of which OS this is built on.
-hidden = collect_submodules("pystray")
+# of which OS this is built on. tkinter needs the same treatment - its
+# import lives inside native_dialog.py's module body (not nested in a
+# function, specifically so this works), but PyInstaller's tkinter hook
+# still needs an explicit nudge on some platforms to bundle Tcl/Tk's
+# actual shared libraries alongside the bytecode.
+hidden = collect_submodules("pystray") + collect_submodules("tkinter")
 
 icon = None
 if sys.platform == "win32":

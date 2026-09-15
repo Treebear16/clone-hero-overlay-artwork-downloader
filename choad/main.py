@@ -42,7 +42,19 @@ def main():
     parser = argparse.ArgumentParser(description="CHOAD - Clone Hero Overlay Artwork Downloader")
     parser.add_argument("--no-tray", action="store_true", help="Run headless (no system tray icon)")
     parser.add_argument("--host", default="127.0.0.1", help="Bind address (default: 127.0.0.1)")
+    # Hidden, internal-only: the control panel's "Browse" buttons re-invoke
+    # this same program with these flags to pop a native file/folder picker
+    # in an isolated subprocess (see native_dialog.py for why), print the
+    # chosen path as JSON, and exit - never shown to, or used directly by,
+    # an end user.
+    parser.add_argument("--native-dialog", choices=["file", "dir"], help=argparse.SUPPRESS)
+    parser.add_argument("--initial-dir", default="", help=argparse.SUPPRESS)
     args = parser.parse_args()
+
+    if args.native_dialog:
+        from . import native_dialog
+        native_dialog.run_dialog_and_print(args.native_dialog, args.initial_dir)
+        return
 
     ctx = AppContext()
     save_settings(ctx.settings)  # write defaults on first run

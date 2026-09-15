@@ -44,12 +44,14 @@ jobs:
           pip install pyinstaller
 
       # Linux runners have no desktop/tray by default, but pystray still
-      # needs an importable backend (AppIndicator/GTK) to *build* cleanly.
-      - name: Install Linux tray dependencies
+      # needs an importable backend (AppIndicator/GTK) to *build* cleanly,
+      # and tkinter (the native file-browse dialog) isn't installed with
+      # the base Python either.
+      - name: Install Linux tray + tkinter dependencies
         if: matrix.os == 'ubuntu-latest'
         run: |
           sudo apt-get update
-          sudo apt-get install -y gir1.2-appindicator3-0.1 gir1.2-gtk-3.0 python3-gi
+          sudo apt-get install -y gir1.2-appindicator3-0.1 gir1.2-gtk-3.0 python3-gi python3-tk
 
       - name: Build icons
         run: python scripts/build_icons.py

@@ -3,8 +3,6 @@
 - the settings/control panel opened in a normal browser (/, /api/*)
 """
 import os
-import string
-import sys
 
 from flask import Flask, jsonify, request, send_file, Response, render_template
 
@@ -118,39 +116,16 @@ def create_app(ctx):
             since_id = -1
         return jsonify(ctx.logger.since(since_id))
 
-    # ---------------- filesystem browser (for picking paths from the web UI) ----------------
+    # ---------------- native OS file/folder picker ----------------
 
-    @app.route("/api/fs/roots")
-    def fs_roots():
-        if sys.platform == "win32":
-            roots = [f"{d}:\\" for d in string.ascii_uppercase if os.path.exists(f"{d}:\\")]
-        else:
-            roots = [os.path.expanduser("~"), "/"]
-        return jsonify(roots)
+    @app.route("/api/browse-native", methods=["POST"])
+    def browse_native():
+        body = request.get_json(force=True, silent=True) or {}
+        mode = "dir" if body.get("mode") == "dir" else "file"
+        initial_dir = body.get("initialDir") or ""
+        from . import native_dialog
 
-    @app.route("/api/fs/list")
-    def fs_list():
-        path = request.args.get("path") or os.path.expanduser("~")
-        only_dirs = request.args.get("dirsOnly", "true") == "true"
-        try:
-            entries = []
-            with os.scandir(path) as it:
-                for entry in it:
-                    try:
-                        is_dir = entry.is_dir()
-                    except OSError:
-                        continue
-                    if only_dirs and not is_dir:
-                        continue
-                    if entry.name.startswith("."):
-                        continue
-                    entries.append({"name": entry.name, "path": entry.path, "isDir": is_dir})
-            entries.sort(key=lambda e: (not e["isDir"], e["name"].lower()))
-            parent = os.path.dirname(path.rstrip("/\\")) or None
-            if parent == path:
-                parent = None
-            return jsonify({"path": path, "parent": parent, "entries": entries})
-        except OSError as exc:
-            return jsonify({"error": str(exc)}), 400
+        path = native_dialog.pick_path(mode=mode, initial_dir=initial_dir)
+        return jsonify({"path": path})
 
     return app
