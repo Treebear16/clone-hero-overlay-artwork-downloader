@@ -1,0 +1,13 @@
+# PyInstaller build output - regenerated fresh by GitHub Actions on every
+# build, never meant to be committed.
+/build/
+/dist/
+
+# Python cache
+__pycache__/
+*.pyc
+
+# Local config CHOAD writes at runtime (per-user, machine-specific) - if
+# you ever run the app from source in this folder for testing, keep its
+# generated config out of the repo too.
+*.egg-info/

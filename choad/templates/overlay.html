@@ -106,6 +106,7 @@
   var textPanel = document.getElementById('textPanel');
   var rowEls = document.querySelectorAll('.row');
   var lastRenderKey = null;
+  var pendingChangeId = 0;
   var lastPanelWidth = null;
   var lastLayout = null;
   var currentSongRatio = 0.74;
@@ -115,15 +116,7 @@
   var currentScrollPauseMs = 2000;
   var lastData = { song: '', artist: '', charter: '', idleText: '' };
 
-  function stopMarquee(container) {
-    if (container._marqueeRAF) {
-      cancelAnimationFrame(container._marqueeRAF);
-      container._marqueeRAF = null;
-    }
-  }
-
-  function fillRow(container, text, sizeRatio, mode) {
-    stopMarquee(container);
+  function fillRow(container, text, sizeRatio, mode, onMeasured) {
     container.classList.remove('static', 'scrolling', 'wrap');
     container.innerHTML = '';
     container.scrollLeft = 0;
@@ -141,6 +134,7 @@
       // the "..." treatment, automatically, with no measurement needed.
       cell.classList.add('truncate-cell');
       container.classList.add('static');
+      if (onMeasured) onMeasured(null);
       return;
     }
 
@@ -148,6 +142,7 @@
       var overflow = cell.scrollWidth > container.clientWidth;
       if (!overflow || !text) {
         container.classList.add('static');
+        if (onMeasured) onMeasured(null);
         return;
       }
       var gap = document.createElement('span');
@@ -162,84 +157,115 @@
       container.appendChild(cell2);
       container.classList.add('scrolling');
 
-      // Continuous one-direction wrap (like before - text plus a duplicated
-      // copy with a gap between, so looping back to the start is seamless),
-      // but each pass eases in and out instead of moving at constant speed.
       var distance = cell.scrollWidth + gap.offsetWidth;
-      var phase = 'paused';
-      var phaseStart = null;
-
-      function step(ts) {
-        // Read speed/pause fresh every frame (not captured once at the
-        // start) so a slider change applies within the current pass
-        // rather than waiting for the next song/text change. A pause or
-        // ease already in progress finishes out its original duration -
-        // only the *next* one picks up a mid-transition change.
-        if (phaseStart === null) { phaseStart = ts; }
-        var elapsed = ts - phaseStart;
-
-        if (phase === 'paused') {
-          if (elapsed >= currentScrollPauseMs) {
-            phase = 'scrolling';
-            phaseStart = ts;
-          }
-          container._marqueeRAF = requestAnimationFrame(step);
-          return;
-        }
-
-        // Short, fixed-duration ease-in/ease-out (quadratic ramps) with a
-        // proper constant-speed cruise filling the rest of the pass - a
-        // curve applied across the *entire* pass never actually reaches a
-        // constant speed, which read as the easing dragging on too long.
-        // Distance covered by a quad ramp from/to rest over easeMs is half
-        // of (speed * easeMs), same as constant-acceleration motion.
-        var speedPxPerMs = Math.max(1, currentScrollSpeed) / 1000;
-        var easeMs = 600;
-        var easeDistance = 0.5 * speedPxPerMs * easeMs;
-        if (easeDistance * 2 > distance) {
-          // Too short to fit both full ramps - shrink them evenly rather
-          // than overshoot, splitting the whole pass into ease-in/out only.
-          easeMs = Math.max(50, (distance / speedPxPerMs) / 2);
-          easeDistance = distance / 2;
-        }
-        var cruiseDistance = Math.max(0, distance - easeDistance * 2);
-        var cruiseMs = cruiseDistance / speedPxPerMs;
-        var totalMs = easeMs + cruiseMs + easeMs;
-
-        if (elapsed >= totalMs) {
-          phase = 'paused';
-          phaseStart = ts;
-          container.scrollLeft = 0; // wrap back to the start, same as the old seamless loop
-          container._marqueeRAF = requestAnimationFrame(step);
-          return;
-        }
-
-        if (elapsed < easeMs) {
-          var t1 = elapsed / easeMs;
-          container.scrollLeft = easeDistance * (t1 * t1); // easeInQuad
-        } else if (elapsed < easeMs + cruiseMs) {
-          container.scrollLeft = easeDistance + ((elapsed - easeMs) * speedPxPerMs);
-        } else {
-          var t2 = Math.min(1, (elapsed - easeMs - cruiseMs) / easeMs);
-          var decel = 1 - (1 - t2) * (1 - t2); // easeOutQuad
-          container.scrollLeft = easeDistance + cruiseDistance + easeDistance * decel;
-        }
-        container._marqueeRAF = requestAnimationFrame(step);
-      }
-      container._marqueeRAF = requestAnimationFrame(step);
+      if (onMeasured) onMeasured({container: container, distance: distance});
     });
   }
 
+  // ---------- synchronized scroll group ----------
+  // All scrolling rows (song/artist, and idle text) move together: they
+  // start their pass at the same instant, each finishes and holds at its
+  // own start position as soon as its own (shorter) text has scrolled
+  // through, and once the LONGEST row finishes too, every row pauses
+  // together and restarts together - rather than each row running its own
+  // independent clock and drifting out of sync with the others.
+  var groupRAF = null;
+  var groupPhase = 'paused';
+  var groupPhaseStart = null;
+
+  function stopScrollGroup() {
+    if (groupRAF) { cancelAnimationFrame(groupRAF); groupRAF = null; }
+    groupPhase = 'paused';
+    groupPhaseStart = null;
+  }
+
+  function rowTiming(distance) {
+    // Same ease-in/cruise/ease-out shape as before, just factored out so
+    // every row in the group can be evaluated against one shared elapsed
+    // time each frame. Recomputed fresh every frame (not cached) so a
+    // speed/pause slider change applies within the current pass.
+    var speedPxPerMs = Math.max(1, currentScrollSpeed) / 1000;
+    var easeMs = 600;
+    var easeDistance = 0.5 * speedPxPerMs * easeMs;
+    if (easeDistance * 2 > distance) {
+      easeMs = Math.max(50, (distance / speedPxPerMs) / 2);
+      easeDistance = distance / 2;
+    }
+    var cruiseDistance = Math.max(0, distance - easeDistance * 2);
+    var cruiseMs = cruiseDistance / speedPxPerMs;
+    return {easeMs: easeMs, easeDistance: easeDistance, cruiseDistance: cruiseDistance, cruiseMs: cruiseMs, totalMs: easeMs + cruiseMs + easeMs};
+  }
+
+  function startScrollGroup(rows) {
+    if (!rows.length) return; // nothing overflowed - nothing to scroll
+
+    function step(ts) {
+      if (groupPhaseStart === null) { groupPhaseStart = ts; }
+      var elapsed = ts - groupPhaseStart;
+
+      if (groupPhase === 'paused') {
+        if (elapsed >= currentScrollPauseMs) {
+          groupPhase = 'scrolling';
+          groupPhaseStart = ts;
+        }
+        groupRAF = requestAnimationFrame(step);
+        return;
+      }
+
+      var maxTotalMs = 0;
+      for (var i = 0; i < rows.length; i++) {
+        var timing = rowTiming(rows[i].distance);
+        maxTotalMs = Math.max(maxTotalMs, timing.totalMs);
+
+        if (elapsed >= timing.totalMs) {
+          // This row's own pass is done - loop back to the start and hold
+          // there until the longest row in the group finishes too.
+          rows[i].container.scrollLeft = 0;
+        } else if (elapsed < timing.easeMs) {
+          var t1 = elapsed / timing.easeMs;
+          rows[i].container.scrollLeft = timing.easeDistance * (t1 * t1); // easeInQuad
+        } else if (elapsed < timing.easeMs + timing.cruiseMs) {
+          rows[i].container.scrollLeft = timing.easeDistance + ((elapsed - timing.easeMs) * (Math.max(1, currentScrollSpeed) / 1000));
+        } else {
+          var t2 = Math.min(1, (elapsed - timing.easeMs - timing.cruiseMs) / timing.easeMs);
+          var decel = 1 - (1 - t2) * (1 - t2); // easeOutQuad
+          rows[i].container.scrollLeft = timing.easeDistance + timing.cruiseDistance + timing.easeDistance * decel;
+        }
+      }
+
+      if (elapsed >= maxTotalMs) {
+        groupPhase = 'paused';
+        groupPhaseStart = ts;
+        for (var j = 0; j < rows.length; j++) { rows[j].container.scrollLeft = 0; }
+      }
+
+      groupRAF = requestAnimationFrame(step);
+    }
+
+    groupPhase = 'paused'; // brief shared pause before the very first synchronized pass
+    groupPhaseStart = null;
+    groupRAF = requestAnimationFrame(step);
+  }
+
   function renderAll() {
+    stopScrollGroup();
+    var expected = 3;
+    var measured = [];
+    function onMeasured(info) {
+      if (info) { measured.push(info); }
+      expected--;
+      if (expected === 0) { startScrollGroup(measured); }
+    }
+
     if (lastData.song) {
       // Normal 3-row layout.
       textPanel.classList.remove('no-content');
       rowEls[0].style.height = '';
       rowEls[1].style.display = '';
       rowEls[2].style.display = '';
-      fillRow(rows.song, lastData.song, currentSongRatio);
-      fillRow(rows.artist, lastData.artist, currentArtistRatio);
-      fillRow(rows.charter, lastData.charter || '', currentCharterRatio, 'truncate');
+      fillRow(rows.song, lastData.song, currentSongRatio, undefined, onMeasured);
+      fillRow(rows.artist, lastData.artist, currentArtistRatio, undefined, onMeasured);
+      fillRow(rows.charter, lastData.charter || '', currentCharterRatio, undefined, onMeasured);
     } else {
       // Idle: scrolls exactly like a song title (marquee), just using the
       // whole panel's height instead of a single 100px row - artist/charter
@@ -254,9 +280,9 @@
       rowEls[0].style.height = '100%';
 
       var idleRatio = (parseFloat(lastData.idleFontSize) || 48) / 100;
-      fillRow(rows.song, idleText, idleRatio);
-      fillRow(rows.artist, '', currentArtistRatio);
-      fillRow(rows.charter, '', currentCharterRatio, 'truncate');
+      fillRow(rows.song, idleText, idleRatio, undefined, onMeasured);
+      fillRow(rows.artist, '', currentArtistRatio, undefined, onMeasured);
+      fillRow(rows.charter, '', currentCharterRatio, undefined, onMeasured);
     }
   }
 
@@ -283,6 +309,13 @@
     document.documentElement.style.setProperty('--text-color', data.textColor || '#ffffff');
     var bgOpacity = (data.bgOpacity === undefined || data.bgOpacity === null) ? 100 : data.bgOpacity;
     document.documentElement.style.setProperty('--bg-color', hexToRgba(data.bgColor, bgOpacity));
+
+    // Fine-tune vertical position within each row - a translate rather than
+    // padding/margin so it never affects row height, layout, or the
+    // horizontal scroll-width measurement fillRow relies on.
+    rows.song.style.transform = 'translateY(' + (clampNum(parseInt(data.songYOffset, 10), -50, 50, 0)) + 'px)';
+    rows.artist.style.transform = 'translateY(' + (clampNum(parseInt(data.artistYOffset, 10), -50, 50, 0)) + 'px)';
+    rows.charter.style.transform = 'translateY(' + (clampNum(parseInt(data.charterYOffset, 10), -50, 50, 0)) + 'px)';
 
     var w = parseInt(data.panelWidth, 10);
     if (!w || w < 100) { w = 900; }
@@ -332,43 +365,48 @@
       renderAll();
     }
 
-    applyCustomFont(data.customFontPath || '');
+    applyFontFamily(data.fontFamily || '');
   }
 
-  // One font file covers the whole overlay (song/artist/charter/idle) - a
-  // single .ttf/.otf/.woff/.woff2 usually only has one real weight anyway,
-  // so the browser synthesizes bold where the CSS still asks for it. Only
-  // re-fetches when the configured path actually changes, not every poll.
-  var CUSTOM_FONT_FAMILY = 'CHOADCustomFont';
-  var loadedCustomFontPath = null;
+  // Fonts are stored in CHOAD's own appdata library (added via the control
+  // panel's font picker) and served back at /fonts/<filename> - registered
+  // here with the FontFace API under a label we choose ourselves (the
+  // filename, minus its extension), so it never depends on what that font
+  // happens to call itself internally, nor on anything being "installed"
+  // in the OS sense at all.
+  var loadedFontFilename = null;
 
-  function applyCustomFont(path) {
-    if (path === loadedCustomFontPath) { return; }
-    loadedCustomFontPath = path;
+  function applyFontFamily(filename) {
+    if (filename === loadedFontFilename) { return; }
+    loadedFontFilename = filename;
 
-    if (!path) {
+    if (!filename) {
       document.documentElement.style.setProperty('--overlay-font', '"Lato", "Segoe UI", Arial, sans-serif');
       renderAll();
       return;
     }
 
-    fetch('/customfont?v=' + encodeURIComponent(path), { cache: 'no-store' })
+    var label = filename.replace(/\.[^.]+$/, ''); // strip extension for a cleaner label
+    fetch('/fonts/' + encodeURIComponent(filename), { cache: 'no-store' })
       .then(function (r) {
-        if (!r.ok) { throw new Error('no custom font'); }
+        if (!r.ok) { throw new Error('font not found'); }
         return r.arrayBuffer();
       })
       .then(function (buf) {
-        var face = new FontFace(CUSTOM_FONT_FAMILY, buf);
+        var face = new FontFace(label, buf);
         return face.load();
       })
       .then(function (face) {
         document.fonts.add(face);
-        document.documentElement.style.setProperty('--overlay-font', '"' + CUSTOM_FONT_FAMILY + '", "Lato", "Segoe UI", Arial, sans-serif');
+        document.documentElement.style.setProperty(
+          '--overlay-font', '"' + label.replace(/"/g, '\\"') + '", "Lato", "Segoe UI", Arial, sans-serif'
+        );
         renderAll();
       })
       .catch(function () {
-        // Bad/unreadable font file - quietly fall back to Lato rather than
-        // leaving the overlay stuck or blank.
+        // Missing/unreadable font (e.g. removed from the library since
+        // this setting was saved) - fall back to Lato rather than leaving
+        // the overlay stuck or blank.
         document.documentElement.style.setProperty('--overlay-font', '"Lato", "Segoe UI", Arial, sans-serif');
         renderAll();
       });
@@ -383,7 +421,7 @@
   }
 
   function poll() {
-    fetch('/nowplaying', { cache: 'no-store' })
+    fetch('/api/nowplaying', { cache: 'no-store' })
       .then(function (r) {
         if (!r.ok) { throw new Error('bad response'); }
         return r.json();
@@ -392,14 +430,9 @@
         lastSuccessTime = Date.now();
         updateStaleState();
 
-        // Always refresh the art on every poll (not just when the song
-        // metadata changes) - the resized art file often isn't finished
-        // writing yet at the exact moment the song changes, so tying the
-        // image refresh to the same token can leave it stuck on stale art
-        // for the rest of the song. A cheap local re-fetch every second
-        // guarantees it catches up as soon as the file is actually ready.
-        art.src = '/art?t=' + Date.now();
-
+        // Style/layout settings (colors, sizes, panel width) can change
+        // live from the control panel independently of the song, so this
+        // always applies regardless of whether the song itself changed.
         applyConfig(data);
 
         // Re-render on an actual song change (token), OR - while idle - if
@@ -408,12 +441,27 @@
         // next song change.
         var idleText = data.idleText || '';
         var renderKey = data.token + '|' + (data.song ? '' : (idleText + '|' + data.idleFontSize));
-        if (renderKey !== lastRenderKey) {
+        if (renderKey === lastRenderKey) {
+          return;
+        }
+
+        // Preload the new art fully before swapping anything visible, and
+        // swap the image and the text in the same instant - rather than
+        // pointing <img> at the new URL and letting the text update while
+        // the browser is still fetching/decoding it in the background,
+        // which is what caused the art to visibly lag behind the text.
+        var thisChange = ++pendingChangeId;
+        var newArtUrl = '/art?t=' + Date.now();
+        var preload = new Image();
+        preload.onload = preload.onerror = function () {
+          if (thisChange !== pendingChangeId) { return; } // a newer change already superseded this one
           lastRenderKey = renderKey;
           data.idleText = idleText;
           lastData = data;
+          art.src = newArtUrl;
           renderAll();
-        }
+        };
+        preload.src = newArtUrl;
       })
       .catch(function () {
         // CHOAD closed, crashed, machine asleep, etc. - don't touch any

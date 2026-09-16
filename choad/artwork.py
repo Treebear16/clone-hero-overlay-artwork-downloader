@@ -3,15 +3,32 @@ configured bg color) and the iTunes Search API fallback lookup, mirroring
 Resize-ImageToSquare / Get-AlbumArtUrl / Start-ItunesLookupAsync from the
 ps1."""
 import os
+import shutil
 import threading
 
 import requests
-from PIL import Image
+from PIL import Image, ImageDraw, ImageFont
 
 from .library import clean_tag, normalize_text
 
 ITUNES_TIMEOUT = 10
 ITUNES_DOWNLOAD_TIMEOUT = 15
+
+
+def export_art_copy(source_path: str, export_path: str, logger=None):
+    """Optional convenience copy of the overlay's own art file out to
+    wherever the person wants a plain file for something else (a separate
+    OBS Image Source, another program entirely). A no-op when export_path
+    isn't set - this is strictly an extra, best-effort copy on top of the
+    overlay's own internal art file, never required for the overlay itself
+    to work."""
+    if not export_path:
+        return
+    try:
+        shutil.copyfile(source_path, export_path)
+    except OSError as exc:
+        if logger:
+            logger.log(f"Couldn't write exported art file: {exc}")
 
 
 def _hex_to_rgb(hex_color: str):
@@ -22,6 +39,42 @@ def _hex_to_rgb(hex_color: str):
         return tuple(int(h[i : i + 2], 16) for i in (0, 2, 4))
     except (ValueError, IndexError):
         return (0, 0, 0)
+
+
+def generate_sample_art(dest_path, size: int, bg_color_hex: str = "#000000"):
+    """Draws a plain placeholder square (border + "SAMPLE ART" label) in an
+    accent color contrasting with the current overlay background, so preview
+    mode has something to show in the art slot without needing a real image
+    file. Written atomically like resize_image_to_square, for the same
+    reason - /art may be read mid-write otherwise."""
+    bg = _hex_to_rgb(bg_color_hex)
+    accent = tuple(255 - c for c in bg)
+
+    img = Image.new("RGB", (size, size), bg)
+    draw = ImageDraw.Draw(img)
+    border = max(4, size // 40)
+    draw.rectangle([border, border, size - border, size - border], outline=accent, width=border)
+
+    label = "SAMPLE\nART"
+    try:
+        font = ImageFont.truetype("arialbd.ttf", size // 8)
+    except OSError:
+        try:
+            font = ImageFont.truetype("DejaVuSans-Bold.ttf", size // 8)
+        except OSError:
+            font = ImageFont.load_default()
+
+    bbox = draw.multiline_textbbox((0, 0), label, font=font, align="center")
+    w = bbox[2] - bbox[0]
+    h = bbox[3] - bbox[1]
+    draw.multiline_text(
+        ((size - w) / 2 - bbox[0], (size - h) / 2 - bbox[1]), label, fill=accent, font=font, align="center"
+    )
+
+    dest_path = str(dest_path)
+    tmp = dest_path + ".new"
+    img.save(tmp, "JPEG", quality=90)
+    os.replace(tmp, dest_path)
 
 
 def resize_image_to_square(source_path: str, dest_path: str, size: int, bg_color_hex: str = "#000000"):
@@ -126,7 +179,9 @@ def _get_album_art_url(artist: str, song: str):
         return None
 
 
-def start_itunes_lookup_async(artist, song, output_image, target_size, song_key, now_playing, logger, bg_color_hex):
+def start_itunes_lookup_async(
+    artist, song, output_image, target_size, song_key, now_playing, logger, bg_color_hex, export_art_path=""
+):
     """Runs the iTunes lookup + download + resize on a background thread, so
     it never blocks the watcher loop. Bails out if the user has already
     moved on to a different song by the time it finishes."""
@@ -151,6 +206,7 @@ def start_itunes_lookup_async(artist, song, output_image, target_size, song_key,
                 return
 
             resize_image_to_square(tmp_path, output_image, target_size, bg_color_hex)
+            export_art_copy(output_image, export_art_path, logger)
             now_playing.update(art_path=output_image)
             now_playing.bump_token()
             logger.log(f"  -> iTunes artwork applied for '{song}' by '{artist}'")

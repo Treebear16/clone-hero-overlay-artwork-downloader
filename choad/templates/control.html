@@ -42,6 +42,7 @@
   #statusDot{width:10px;height:10px;border-radius:50%;background:var(--danger);}
   #statusDot.on{background:var(--success);}
   #overlayLink{color:var(--accent);word-break:break-all;}
+  #recommendedSize{font-size:16px;font-weight:600;color:var(--text);margin-top:8px;}
   #log{background:var(--logbg);color:var(--logtext);font-family:Consolas,monospace;font-size:12px;
        height:220px;overflow-y:auto;padding:10px;border-radius:6px;white-space:pre-wrap;}
   .actions{display:flex;gap:10px;margin-top:4px;}
@@ -50,6 +51,22 @@
                  align-items:center;justify-content:space-between;gap:12px;}
   #updateBanner.show{display:flex;}
   #updateBanner a{color:#fff;font-weight:600;text-decoration:underline;}
+  .preview-wrap{
+    position:relative; width:100%; overflow:hidden; border-radius:6px;
+    border:1px solid var(--border);
+    background-image:
+      linear-gradient(45deg, #2a2c32 25%, transparent 25%),
+      linear-gradient(-45deg, #2a2c32 25%, transparent 25%),
+      linear-gradient(45deg, transparent 75%, #2a2c32 75%),
+      linear-gradient(-45deg, transparent 75%, #2a2c32 75%);
+    background-size: 20px 20px;
+    background-position: 0 0, 0 10px, 10px -10px, -10px 0px;
+    background-color:#1e1f24;
+  }
+  .preview-wrap iframe{
+    position:absolute; top:0; left:0; border:none; background:transparent;
+    transform-origin: top left; pointer-events:none;
+  }
 </style>
 </head>
 <body>
@@ -73,9 +90,15 @@
       <button class="btn btn-accent" id="startBtn">Start Watching</button>
       <button class="btn btn-plain" id="reindexBtn">Rebuild Library Index</button>
     </div>
-    <div class="hint" style="margin-left:0;margin-top:10px;">
+    <div class="hint" style="margin-left:0;margin-top:10px;font-size:16px;font-weight:600;color:var(--text);">
       Overlay (browser source) URL: <a id="overlayLink" href="#" target="_blank"></a>
     </div>
+    <div id="recommendedSize"></div>
+  </section>
+
+  <section>
+    <h2>Log</h2>
+    <div id="log"></div>
   </section>
 
   <section>
@@ -85,16 +108,9 @@
       <button class="browse-btn" data-target="current_song_file" data-mode="file">Browse</button>
     </div>
     <div class="hint">Clone Hero writes this file itself - you're pointing at its <code>currentsong.txt</code>, usually inside your Clone Hero install folder.</div>
-    <div class="row"><label>Output Image (for OBS)</label>
-      <input type="text" id="output_image" placeholder="...\\overlay-art.jpg">
-      <button class="browse-btn" data-target="output_image" data-mode="file">Browse</button>
-    </div>
     <div class="row"><label>Default Image</label>
       <input type="text" id="default_image" placeholder="shown when no art is found">
       <button class="browse-btn" data-target="default_image" data-mode="file">Browse</button>
-    </div>
-    <div class="row"><label>Target Size (px)</label>
-      <input type="number" id="target_size" min="50" max="2000" style="max-width:120px;">
     </div>
     <div class="row"><label>Songs Folders</label>
       <input type="text" id="songs_library_folder" placeholder="folder1;folder2 (optional, semicolon-separated)">
@@ -105,10 +121,27 @@
       <input type="checkbox" id="itunes_lookup_enabled">
       <label for="itunes_lookup_enabled">Look up missing artwork on iTunes</label>
     </div>
+    <div class="row"><label>Export Art To File</label>
+      <input type="text" id="export_art_path" placeholder="optional - leave blank unless you need this">
+      <button class="browse-btn" data-target="export_art_path" data-mode="file">Browse</button>
+    </div>
+    <div class="hint">Not needed for the overlay itself - it already has an "Art only" layout option below. This is only for adding the art as a separate, plain Image Source in OBS (or another program that doesn't support browser sources), which uses less CPU than a browser source and works outside OBS entirely.</div>
+    <div class="row"><label>Export Art Size (px)</label>
+      <input type="number" id="target_size" min="50" max="2000" style="max-width:120px;">
+    </div>
+    <div class="hint">Also sets the resolution the overlay's own art is rendered at, not just the exported file.</div>
   </section>
 
   <section>
     <h2>Overlay</h2>
+    <div class="checkbox-row">
+      <input type="checkbox" id="previewToggle">
+      <label for="previewToggle">Preview with sample data (long song/artist, to check scroll speed) - no need for Clone Hero to be running</label>
+    </div>
+    <div id="previewWrap" class="preview-wrap">
+      <iframe id="previewFrame" src="/overlay" title="Overlay live preview"></iframe>
+    </div>
+    <div class="hint" style="margin:6px 0 14px;">Live preview - reflects the settings below within about a second, same as OBS.</div>
     <div class="row"><label>Port</label>
       <input type="number" id="overlay_port" style="max-width:120px;">
     </div>
@@ -136,13 +169,25 @@
       <input type="range" id="overlay_song_font_size" min="40" max="85">
       <span class="val" id="overlay_song_font_size_val"></span>
     </div>
+    <div class="row"><label>Song Vertical Position (px)</label>
+      <input type="range" id="overlay_song_y_offset" min="-50" max="50">
+      <span class="val" id="overlay_song_y_offset_val"></span>
+    </div>
     <div class="row"><label>Artist Font Size (%)</label>
       <input type="range" id="overlay_artist_font_size" min="30" max="80">
       <span class="val" id="overlay_artist_font_size_val"></span>
     </div>
+    <div class="row"><label>Artist Vertical Position (px)</label>
+      <input type="range" id="overlay_artist_y_offset" min="-50" max="50">
+      <span class="val" id="overlay_artist_y_offset_val"></span>
+    </div>
     <div class="row"><label>Charter Font Size (%)</label>
       <input type="range" id="overlay_charter_font_size" min="25" max="75">
       <span class="val" id="overlay_charter_font_size_val"></span>
+    </div>
+    <div class="row"><label>Charter Vertical Position (px)</label>
+      <input type="range" id="overlay_charter_y_offset" min="-50" max="50">
+      <span class="val" id="overlay_charter_y_offset_val"></span>
     </div>
     <div class="row"><label>Scroll Speed</label>
       <input type="range" id="overlay_scroll_speed" min="30" max="300">
@@ -159,29 +204,28 @@
       <input type="range" id="overlay_idle_font_size" min="10" max="100">
       <span class="val" id="overlay_idle_font_size_val"></span>
     </div>
-    <div class="row"><label>Custom Font File</label>
-      <input type="text" id="overlay_custom_font_path" placeholder="optional .ttf/.otf/.woff/.woff2">
-      <button class="browse-btn" data-target="overlay_custom_font_path" data-mode="file">Browse</button>
+    <div class="row"><label>Font</label>
+      <select id="overlay_font_family">
+        <option value="">Default (Lato)</option>
+      </select>
+      <button class="browse-btn" id="addFontBtn" type="button">Add Font...</button>
     </div>
-  </section>
-
-  <section>
-    <h2>Log</h2>
-    <div id="log"></div>
+    <div class="hint">Fonts you add are kept by CHOAD itself, so once added you can pick them here in any project - no need to keep the original file anywhere in particular.</div>
   </section>
 
 </main>
 
 <script>
 const FIELDS = [
-  "current_song_file","output_image","default_image","songs_library_folder","target_size","itunes_lookup_enabled",
+  "current_song_file","export_art_path","default_image","songs_library_folder","target_size","itunes_lookup_enabled",
   "overlay_port","overlay_text_color","overlay_bg_color","overlay_panel_width","overlay_idle_text",
-  "overlay_idle_font_size","overlay_custom_font_path","overlay_layout","overlay_bg_opacity",
+  "overlay_idle_font_size","overlay_font_family","overlay_layout","overlay_bg_opacity",
   "overlay_song_font_size","overlay_artist_font_size","overlay_charter_font_size","overlay_scroll_speed",
-  "overlay_scroll_pause_seconds"
+  "overlay_scroll_pause_seconds","overlay_song_y_offset","overlay_artist_y_offset","overlay_charter_y_offset"
 ];
 const SLIDERS = ["overlay_panel_width","overlay_bg_opacity","overlay_song_font_size","overlay_artist_font_size",
-                  "overlay_charter_font_size","overlay_scroll_speed","overlay_scroll_pause_seconds","overlay_idle_font_size"];
+                  "overlay_charter_font_size","overlay_scroll_speed","overlay_scroll_pause_seconds","overlay_idle_font_size",
+                  "overlay_song_y_offset","overlay_artist_y_offset","overlay_charter_y_offset"];
 
 let saveTimer = null;
 let lastLogId = -1;
@@ -212,6 +256,53 @@ function applyToFields(settings){
     const valEl = el(s + "_val");
     if (valEl) valEl.textContent = el(s).value;
   }
+  updatePreviewSize();
+}
+
+// Scales the embedded overlay preview to fit the section width, at the
+// same fixed 300px-tall / (art + panelWidth)-wide size the real overlay
+// renders at - so it's always in true proportion, just shrunk to fit,
+// rather than stretched or cropped.
+// Shared with the live preview box below - the overlay is always a fixed
+// 300px tall, and either 300 (art) + panelWidth, just panelWidth (text
+// only), or just 300 (art only) wide, depending on layout.
+function computeOverlayDimensions(){
+  const layout = el("overlay_layout") ? el("overlay_layout").value : "left";
+  const panelWidth = parseInt(el("overlay_panel_width") ? el("overlay_panel_width").value : 900, 10) || 900;
+
+  let width;
+  if (layout === "none") width = panelWidth;
+  else if (layout === "artonly") width = 300;
+  else width = 300 + panelWidth;
+
+  return {width: width, height: 300};
+}
+
+function updateRecommendedSize(){
+  const el2 = el("recommendedSize");
+  if (!el2) return;
+  const dim = computeOverlayDimensions();
+  el2.textContent = `Set your OBS Browser Source to ${dim.width} x ${dim.height} to match.`;
+}
+
+function updatePreviewSize(){
+  const wrap = el("previewWrap");
+  const frame = el("previewFrame");
+  if (!wrap || !frame) return;
+
+  const dim = computeOverlayDimensions();
+  const totalWidth = dim.width;
+  const totalHeight = dim.height;
+
+  const availableWidth = wrap.clientWidth || wrap.parentElement.clientWidth || totalWidth;
+  const scale = Math.min(1, availableWidth / totalWidth);
+
+  frame.style.width = totalWidth + "px";
+  frame.style.height = totalHeight + "px";
+  frame.style.transform = "scale(" + scale + ")";
+  wrap.style.height = Math.round(totalHeight * scale) + "px";
+
+  updateRecommendedSize();
 }
 
 function scheduleSave(){
@@ -226,7 +317,28 @@ async function saveSettings(){
   });
 }
 
+async function loadFonts(selectFilename){
+  try {
+    const r = await fetch("/api/fonts");
+    const data = await r.json();
+    const select = el("overlay_font_family");
+    // Rebuild the list fresh each time (rather than just appending) so
+    // this doubles as a refresh after adding a new font.
+    while (select.options.length > 1) select.remove(1);
+    for (const filename of (data.fonts || [])){
+      const opt = document.createElement("option");
+      opt.value = filename;
+      opt.textContent = filename.replace(/\.[^.]+$/, ""); // hide the extension, it's just noise here
+      select.appendChild(opt);
+    }
+    if (selectFilename) select.value = selectFilename;
+  } catch (err) {
+    // Font list is a nice-to-have - if it fails, "Default (Lato)" still works.
+  }
+}
+
 async function loadSettings(){
+  await loadFonts(); // must populate <option>s before applying the saved value, or the select can't select it
   const r = await fetch("/api/settings");
   applyToFields(await r.json());
   refreshStatus();
@@ -245,6 +357,7 @@ async function refreshStatus(){
   el("startBtn").classList.toggle("btn-accent", !watching);
   el("overlayLink").textContent = s.overlayUrl;
   el("overlayLink").href = s.overlayUrl;
+  if (el("previewToggle")) el("previewToggle").checked = !!s.previewMode;
 
   const banner = el("updateBanner");
   if (s.updateAvailable){
@@ -276,7 +389,58 @@ for (const f of FIELDS){
   if (!node) continue;
   node.addEventListener("input", () => {
     if (SLIDERS.includes(f)) el(f + "_val").textContent = node.value;
+    if (f === "overlay_layout" || f === "overlay_panel_width") updatePreviewSize();
     scheduleSave();
+  });
+}
+// <select> elements don't reliably fire "input" in every browser - make
+// sure a layout change (art/none/artonly) always resizes the preview.
+if (el("overlay_layout")) el("overlay_layout").addEventListener("change", updatePreviewSize);
+// <select> elements don't reliably fire "input" in every browser - make
+// sure picking a font always saves, same reasoning as the layout dropdown.
+if (el("overlay_font_family")) el("overlay_font_family").addEventListener("change", scheduleSave);
+window.addEventListener("resize", updatePreviewSize);
+
+if (el("addFontBtn")) {
+  el("addFontBtn").addEventListener("click", async () => {
+    const btn = el("addFontBtn");
+    btn.disabled = true;
+    const originalText = btn.textContent;
+    btn.textContent = "Waiting for picker...";
+    try {
+      const r = await fetch("/api/browse-native", {
+        method: "POST", headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({mode: "file"})
+      });
+      const data = await r.json();
+      if (!data.path) { return; } // cancelled, or no native picker available
+
+      const addResp = await fetch("/api/fonts/add", {
+        method: "POST", headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({path: data.path})
+      });
+      const addResult = await addResp.json();
+      if (addResult.ok === false) {
+        alert(addResult.error || "Couldn't add that font.");
+        return;
+      }
+      await loadFonts(addResult.filename); // refresh the dropdown and select the new font
+      scheduleSave();
+    } catch (err) {
+      alert("Couldn't add that font.");
+    } finally {
+      btn.disabled = false;
+      btn.textContent = originalText;
+    }
+  });
+}
+
+if (el("previewToggle")) {
+  el("previewToggle").addEventListener("change", async () => {
+    await fetch("/api/preview", {
+      method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({enabled: el("previewToggle").checked})
+    });
   });
 }
 

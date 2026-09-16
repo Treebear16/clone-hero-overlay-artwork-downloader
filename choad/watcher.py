@@ -4,7 +4,8 @@ import os
 import threading
 import time
 
-from .artwork import resize_image_to_square, start_itunes_lookup_async
+from .artwork import export_art_copy, resize_image_to_square, start_itunes_lookup_async
+from .config import ART_FILE
 
 POLL_INTERVAL_SECONDS = 0.5
 
@@ -45,14 +46,16 @@ class Watcher:
         self.running = False
 
     def _show_default_image(self, settings):
+        art_file = str(ART_FILE())
         if settings.default_image and os.path.isfile(settings.default_image):
             try:
                 resize_image_to_square(
-                    settings.default_image, settings.output_image, settings.target_size, settings.overlay_bg_color
+                    settings.default_image, art_file, settings.target_size, settings.overlay_bg_color
                 )
+                export_art_copy(art_file, settings.export_art_path, self.logger)
             except (OSError, ValueError) as exc:
                 self.logger.log(f"Couldn't load default image: {exc}")
-        self.now_playing.update(art_path=settings.output_image)
+        self.now_playing.update(song="", artist="", charter="", art_path=art_file)
         self.now_playing.bump_token()
 
     def start(self):
@@ -61,8 +64,6 @@ class Watcher:
         settings = self._settings_getter()
         if not settings.current_song_file or not os.path.isfile(settings.current_song_file):
             raise ValueError("Current song file path is not set or doesn't exist.")
-        if not settings.output_image:
-            raise ValueError("Output image path is not set.")
 
         self._stop_event.clear()
         self._last_key = ""
@@ -121,24 +122,21 @@ class Watcher:
         self._last_key = key
 
         self.logger.log(f"Now playing: {info['song']} - {info['artist']}")
+        art_file = str(ART_FILE())
 
-        self.now_playing.update(
-            song=info["song"],
-            artist=info["artist"],
-            charter=info["charter"],
-            art_path=settings.output_image,
-            song_key=key,
-        )
-        self.now_playing.bump_token()
-
+        # Resolve the artwork file BEFORE publishing the new song text/token,
+        # so the overlay's next poll picks up matching text and art together
+        # instead of the text jumping ahead of a still-stale image (the local
+        # resize below can take a beat, and the overlay refreshes /art on
+        # every poll independently of the token).
         local_art = self.library_index.get_local_album_art(info["artist"], info["song"])
+        art_ready = False
         if local_art:
             try:
-                resize_image_to_square(
-                    local_art, settings.output_image, settings.target_size, settings.overlay_bg_color
-                )
+                resize_image_to_square(local_art, art_file, settings.target_size, settings.overlay_bg_color)
+                export_art_copy(art_file, settings.export_art_path, self.logger)
                 self.logger.log("  -> found local album art in song folder")
-                return
+                art_ready = True
             except (OSError, ValueError) as exc:
                 self.logger.log(f"  -> local art found but failed to load, using default image instead: {exc}")
         elif settings.itunes_lookup_enabled:
@@ -146,22 +144,33 @@ class Watcher:
         else:
             self.logger.log("  -> no local album art found, showing default image")
 
-        if settings.default_image and os.path.isfile(settings.default_image):
+        if not art_ready and settings.default_image and os.path.isfile(settings.default_image):
             try:
                 resize_image_to_square(
-                    settings.default_image, settings.output_image, settings.target_size, settings.overlay_bg_color
+                    settings.default_image, art_file, settings.target_size, settings.overlay_bg_color
                 )
+                export_art_copy(art_file, settings.export_art_path, self.logger)
             except (OSError, ValueError):
                 pass
 
-        if settings.itunes_lookup_enabled:
+        self.now_playing.update(
+            song=info["song"],
+            artist=info["artist"],
+            charter=info["charter"],
+            art_path=art_file,
+            song_key=key,
+        )
+        self.now_playing.bump_token()
+
+        if settings.itunes_lookup_enabled and not art_ready:
             start_itunes_lookup_async(
                 info["artist"],
                 info["song"],
-                settings.output_image,
+                art_file,
                 settings.target_size,
                 key,
                 self.now_playing,
                 self.logger,
                 settings.overlay_bg_color,
+                settings.export_art_path,
             )

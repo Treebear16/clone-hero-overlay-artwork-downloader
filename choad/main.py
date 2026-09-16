@@ -29,6 +29,7 @@ class AppContext:
         )
         self.now_playing.apply_settings(self.settings)
         self.update_info = None  # set by updater.start_background_check
+        self.preview_mode = False  # toggled from the control panel - see webapp.py's /api/preview
 
 
 def run_server(ctx, host="127.0.0.1"):

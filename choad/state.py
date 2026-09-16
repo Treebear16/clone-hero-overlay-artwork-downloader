@@ -24,12 +24,15 @@ class NowPlaying:
         self.panel_width = 900
         self.idle_text = ""
         self.idle_font_size = 48
-        self.custom_font_path = ""
+        self.font_family = ""
         self.layout = "left"
         self.bg_opacity = 100
         self.song_font_size = 74
         self.artist_font_size = 68
         self.charter_font_size = 60
+        self.song_y_offset = 0
+        self.artist_y_offset = 0
+        self.charter_y_offset = 0
         self.scroll_speed = 100
         self.scroll_pause_seconds = 2
 
@@ -54,12 +57,15 @@ class NowPlaying:
                 "panelWidth": self.panel_width,
                 "idleText": self.idle_text,
                 "idleFontSize": self.idle_font_size,
-                "customFontPath": self.custom_font_path,
+                "fontFamily": self.font_family,
                 "layout": self.layout,
                 "bgOpacity": self.bg_opacity,
                 "songFontSize": self.song_font_size,
                 "artistFontSize": self.artist_font_size,
                 "charterFontSize": self.charter_font_size,
+                "songYOffset": self.song_y_offset,
+                "artistYOffset": self.artist_y_offset,
+                "charterYOffset": self.charter_y_offset,
                 "scrollSpeed": self.scroll_speed,
                 "scrollPauseSeconds": self.scroll_pause_seconds,
             }
@@ -73,12 +79,15 @@ class NowPlaying:
             self.panel_width = settings.overlay_panel_width
             self.idle_text = settings.overlay_idle_text
             self.idle_font_size = settings.overlay_idle_font_size
-            self.custom_font_path = settings.overlay_custom_font_path
+            self.font_family = settings.overlay_font_family
             self.layout = settings.overlay_layout
             self.bg_opacity = settings.overlay_bg_opacity
             self.song_font_size = settings.overlay_song_font_size
             self.artist_font_size = settings.overlay_artist_font_size
             self.charter_font_size = settings.overlay_charter_font_size
+            self.song_y_offset = settings.overlay_song_y_offset
+            self.artist_y_offset = settings.overlay_artist_y_offset
+            self.charter_y_offset = settings.overlay_charter_y_offset
             self.scroll_speed = settings.overlay_scroll_speed
             self.scroll_pause_seconds = settings.overlay_scroll_pause_seconds
 
